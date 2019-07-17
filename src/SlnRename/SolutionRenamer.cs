@@ -10,6 +10,7 @@ namespace SlnRename
     /// </summary>
     public class SolutionRenamer
     {
+        public static string[] IgnoredDirectoryNames = {".git", ".svn", ".vs"};
         /// <summary>
         /// Create a backup of the solution before renaming?
         /// Default: true.
@@ -46,16 +47,6 @@ namespace SlnRename
 
             folder = folder.Trim('\\');
 
-            if (projectNamePlaceHolder == null)
-            {
-                throw new ArgumentNullException("projectNamePlaceHolder");
-            }
-
-            if (projectName == null)
-            {
-                throw new ArgumentNullException("projectName");
-            }
-
             if (companyNamePlaceHolder == null && companyName != null)
             {
                 throw new Exception("Can not set companyName if companyNamePlaceHolder is null.");
@@ -64,10 +55,10 @@ namespace SlnRename
             _folder = folder;
 
             _oldCompanyName = companyNamePlaceHolder;
-            _oldProjectName = projectNamePlaceHolder;
+            _oldProjectName = projectNamePlaceHolder ?? throw new ArgumentNullException(nameof(projectNamePlaceHolder));
 
             _companyName = companyName;
-            _projectName = projectName;
+            _projectName = projectName ?? throw new ArgumentNullException(nameof(projectName));
 
             CreateBackup = true;
         }
@@ -119,14 +110,19 @@ namespace SlnRename
             
             foreach (var subDirectory in subDirectories)
             {
+                if (IgnoredDirectoryNames.Any(t => subDirectory.Contains(t)))
+                {
+                    continue;
+                }
                 var newDir = subDirectory;
                 if (subDirectory.Contains(placeHolder))
                 {
                     newDir = subDirectory.Replace(placeHolder, name);
-                    if(newDir == subDirectory) continue;
+                    if(newDir == subDirectory)
+                        continue;
+                    Console.WriteLine("Rename Directory:" + subDirectory + ">>>>>" + newDir);
                     Directory.Move(subDirectory, newDir);
                 }
-                Console.WriteLine("Rename Directory:" + subDirectory + ">>>>>" + newDir);
 
                 RenameDirectoryRecursively(newDir, placeHolder, name);
             }
@@ -134,8 +130,13 @@ namespace SlnRename
 
         private static void RenameAllFiles(string directory, string placeHolder, string name) {
             var files = Directory.GetFiles(directory, "*.*", SearchOption.AllDirectories);
-            foreach(var file in files) {
-                if(file.Contains(placeHolder)) {
+
+            foreach (var file in files) {
+                if (IgnoredDirectoryNames.Any(t => file.Contains(t)))
+                {
+                    continue;
+                }
+                if (file.Contains(placeHolder)) {
                     string newFile = file.Replace(placeHolder, name);
                     File.Move(file, newFile);
 
@@ -149,7 +150,12 @@ namespace SlnRename
 
             var files = Directory.GetFiles(rootPath, "*.*", SearchOption.AllDirectories);
             foreach(var file in files) {
-                if(skipExtensions.Contains(Path.GetExtension(file))) {
+               
+                if (IgnoredDirectoryNames.Any(t=>file.Contains(t)))
+                {
+                    continue;
+                }
+                if (skipExtensions.Contains(Path.GetExtension(file))) {
                     continue;
                 }
 
