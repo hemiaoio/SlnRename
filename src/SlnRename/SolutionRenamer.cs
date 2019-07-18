@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SlnRename
 {
@@ -10,7 +13,7 @@ namespace SlnRename
     /// </summary>
     public class SolutionRenamer
     {
-        public static string[] IgnoredDirectoryNames = {".git", ".svn", ".vs"};
+        public static string[] IgnoredDirectoryNames = { ".nuget",".git", ".svn", ".vs" };//packages, "obj","bin"
         /// <summary>
         /// Create a backup of the solution before renaming?
         /// Default: true.
@@ -18,7 +21,7 @@ namespace SlnRename
         public bool CreateBackup { get; set; }
 
         private readonly string _folder;
-        
+
         private readonly string _oldCompanyName;
         private readonly string _oldProjectName;
 
@@ -94,7 +97,7 @@ namespace SlnRename
         {
             var normalBackupFolder = _folder + "-BACKUP";
             var backupFolder = normalBackupFolder;
-            
+
             int backupNo = 1;
             while (Directory.Exists(backupFolder))
             {
@@ -105,9 +108,10 @@ namespace SlnRename
             DirectoryCopy(_folder, backupFolder, true);
         }
 
-        private static void RenameDirectoryRecursively(string directoryPath, string placeHolder, string name) {
+        private static void RenameDirectoryRecursively(string directoryPath, string placeHolder, string name)
+        {
             var subDirectories = Directory.GetDirectories(directoryPath, "*.*", SearchOption.TopDirectoryOnly);
-            
+
             foreach (var subDirectory in subDirectories)
             {
                 if (IgnoredDirectoryNames.Any(t => subDirectory.Contains(t)))
@@ -118,7 +122,7 @@ namespace SlnRename
                 if (subDirectory.Contains(placeHolder))
                 {
                     newDir = subDirectory.Replace(placeHolder, name);
-                    if(newDir == subDirectory)
+                    if (newDir == subDirectory)
                         continue;
                     Console.WriteLine("Rename Directory:" + subDirectory + ">>>>>" + newDir);
                     Directory.Move(subDirectory, newDir);
@@ -128,15 +132,18 @@ namespace SlnRename
             }
         }
 
-        private static void RenameAllFiles(string directory, string placeHolder, string name) {
+        private static void RenameAllFiles(string directory, string placeHolder, string name)
+        {
             var files = Directory.GetFiles(directory, "*.*", SearchOption.AllDirectories);
 
-            foreach (var file in files) {
+            foreach (var file in files)
+            {
                 if (IgnoredDirectoryNames.Any(t => file.Contains(t)))
                 {
                     continue;
                 }
-                if (file.Contains(placeHolder)) {
+                if (file.Contains(placeHolder))
+                {
                     string newFile = file.Replace(placeHolder, name);
                     File.Move(file, newFile);
 
@@ -145,36 +152,66 @@ namespace SlnRename
             }
         }
 
-        private static void ReplaceContent(string rootPath, string placeHolder, string name) {
-            var skipExtensions = new[] {".exe", ".dll", ".bin", ".suo", ".png", "jpg", "jpeg", ".pdb", ".obj"};
+        private static void ReplaceContent(string rootPath, string placeHolder, string name)
+        {
+            var skipExtensions = new[] { ".exe", ".gif", ".dll", ".bin", ".suo", ".png", ".jpg", ".jpeg", ".pdb", ".obj" };
 
             var files = Directory.GetFiles(rootPath, "*.*", SearchOption.AllDirectories);
-            foreach(var file in files) {
-               
-                if (IgnoredDirectoryNames.Any(t=>file.Contains(t)))
+            var tasks = files.ToList().Select(async file =>
+            {
+                await Task.Run(() =>
                 {
-                    continue;
-                }
-                if (skipExtensions.Contains(Path.GetExtension(file))) {
-                    continue;
-                }
+                    if (IgnoredDirectoryNames.Any(file.Contains))
+                    {
+                        return;
+                    }
 
-                var fileSize = GetFileSize(file);
-                if(fileSize < placeHolder.Length) {
-                    continue;
-                }
+                    if (skipExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()))
+                    {
+                        return;
+                    }
 
-                var encoding = GetEncoding(file);
+                    var fileSize = GetFileSize(file);
+                    if (fileSize < placeHolder.Length)
+                    {
+                        return;
+                    }
 
-                var content = File.ReadAllText(file, encoding);
-                var newContent = content.Replace(placeHolder, name);
-                if(newContent != content) {
-                    File.WriteAllText(file, newContent, encoding);
-                }
+                    var encoding = GetEncoding(file);
 
+                    var content = File.ReadAllText(file, encoding);
+                    var newContent = content.Replace(placeHolder, name);
+                    if (newContent != content)
+                    {
+                        var trycount = 0;
+                        while (true)
+                        {
+                            try
+                            {
+                                File.WriteAllText(file, newContent, encoding);
+                                break;
+                            }
+                            catch (Exception e)
+                            {
+                                trycount++;
+                                Console.WriteLine("Write Error in " + file.Replace(rootPath, "") + "\r\n" + e.Message);
 
-                Console.WriteLine("Replace Content:" + file);
-            }
+                                Thread.Sleep(5000* trycount);
+                                 if (trycount>3)
+                                {
+                                    throw;
+                                }
+                            }
+                        }
+                       
+                    }
+
+                    Console.WriteLine("Replace Content:" + file.Replace(rootPath,""));
+                });
+
+            });
+
+            Task.WhenAll(tasks).Wait();
         }
 
         private static long GetFileSize(string file)
@@ -223,7 +260,7 @@ namespace SlnRename
                 foreach (DirectoryInfo subdir in dirs)
                 {
                     string temppath = Path.Combine(destDirName, subdir.Name);
-                    DirectoryCopy(subdir.FullName, temppath,copySubDirs);
+                    DirectoryCopy(subdir.FullName, temppath, copySubDirs);
                 }
             }
         }
