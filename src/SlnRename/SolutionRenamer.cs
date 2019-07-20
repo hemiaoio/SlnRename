@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace SlnRename
 {
@@ -10,6 +13,7 @@ namespace SlnRename
     /// </summary>
     public class SolutionRenamer
     {
+        public static string[] IgnoredDirectoryNames = { ".nuget",".git", ".svn", ".vs" };//packages, "obj","bin"
         /// <summary>
         /// Create a backup of the solution before renaming?
         /// Default: true.
@@ -17,7 +21,7 @@ namespace SlnRename
         public bool CreateBackup { get; set; }
 
         private readonly string _folder;
-        
+
         private readonly string _oldCompanyName;
         private readonly string _oldProjectName;
 
@@ -46,16 +50,6 @@ namespace SlnRename
 
             folder = folder.Trim('\\');
 
-            if (projectNamePlaceHolder == null)
-            {
-                throw new ArgumentNullException("projectNamePlaceHolder");
-            }
-
-            if (projectName == null)
-            {
-                throw new ArgumentNullException("projectName");
-            }
-
             if (companyNamePlaceHolder == null && companyName != null)
             {
                 throw new Exception("Can not set companyName if companyNamePlaceHolder is null.");
@@ -64,10 +58,10 @@ namespace SlnRename
             _folder = folder;
 
             _oldCompanyName = companyNamePlaceHolder;
-            _oldProjectName = projectNamePlaceHolder;
+            _oldProjectName = projectNamePlaceHolder ?? throw new ArgumentNullException(nameof(projectNamePlaceHolder));
 
             _companyName = companyName;
-            _projectName = projectName;
+            _projectName = projectName ?? throw new ArgumentNullException(nameof(projectName));
 
             CreateBackup = true;
         }
@@ -103,7 +97,7 @@ namespace SlnRename
         {
             var normalBackupFolder = _folder + "-BACKUP";
             var backupFolder = normalBackupFolder;
-            
+
             int backupNo = 1;
             while (Directory.Exists(backupFolder))
             {
@@ -114,28 +108,42 @@ namespace SlnRename
             DirectoryCopy(_folder, backupFolder, true);
         }
 
-        private static void RenameDirectoryRecursively(string directoryPath, string placeHolder, string name) {
+        private static void RenameDirectoryRecursively(string directoryPath, string placeHolder, string name)
+        {
             var subDirectories = Directory.GetDirectories(directoryPath, "*.*", SearchOption.TopDirectoryOnly);
-            
+
             foreach (var subDirectory in subDirectories)
             {
+                if (IgnoredDirectoryNames.Any(t => subDirectory.Contains(t)))
+                {
+                    continue;
+                }
                 var newDir = subDirectory;
                 if (subDirectory.Contains(placeHolder))
                 {
                     newDir = subDirectory.Replace(placeHolder, name);
-                    if(newDir == subDirectory) continue;
+                    if (newDir == subDirectory)
+                        continue;
+                    Console.WriteLine("Rename Directory:" + subDirectory + ">>>>>" + newDir);
                     Directory.Move(subDirectory, newDir);
                 }
-                Console.WriteLine("Rename Directory:" + subDirectory + ">>>>>" + newDir);
 
                 RenameDirectoryRecursively(newDir, placeHolder, name);
             }
         }
 
-        private static void RenameAllFiles(string directory, string placeHolder, string name) {
+        private static void RenameAllFiles(string directory, string placeHolder, string name)
+        {
             var files = Directory.GetFiles(directory, "*.*", SearchOption.AllDirectories);
-            foreach(var file in files) {
-                if(file.Contains(placeHolder)) {
+
+            foreach (var file in files)
+            {
+                if (IgnoredDirectoryNames.Any(t => file.Contains(t)))
+                {
+                    continue;
+                }
+                if (file.Contains(placeHolder))
+                {
                     string newFile = file.Replace(placeHolder, name);
                     File.Move(file, newFile);
 
@@ -144,51 +152,79 @@ namespace SlnRename
             }
         }
 
-        private static void ReplaceContent(string rootPath, string placeHolder, string name) {
-            var skipExtensions = new[] {".exe", ".dll", ".bin", ".suo", ".png", "jpg", "jpeg", ".pdb", ".obj"};
+        private static void ReplaceContent(string rootPath, string placeHolder, string name)
+        {
+            var skipExtensions = new[] { ".exe", ".gif", ".dll", ".bin", ".suo", ".png", ".jpg", ".jpeg", ".pdb", ".obj" };
 
             var files = Directory.GetFiles(rootPath, "*.*", SearchOption.AllDirectories);
-            foreach(var file in files) {
-                if(skipExtensions.Contains(Path.GetExtension(file))) {
-                    continue;
-                }
+            var tasks = files.ToList().Select(async file =>
+            {
+                await Task.Run(() =>
+                {
+                    if (IgnoredDirectoryNames.Any(file.Contains))
+                    {
+                        return;
+                    }
 
-                var fileSize = GetFileSize(file);
-                if(fileSize < placeHolder.Length) {
-                    continue;
-                }
+                    if (skipExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()))
+                    {
+                        return;
+                    }
 
-                var encoding = GetEncoding(file);
+                    var fileSize = GetFileSize(file);
+                    if (fileSize < placeHolder.Length)
+                    {
+                        return;
+                    }
 
-                var content = File.ReadAllText(file, encoding);
-                var newContent = content.Replace(placeHolder, name);
-                if(newContent != content) {
-                    File.WriteAllText(file, newContent, encoding);
-                }
+                    var encoding = GetEncoding(file);
 
+                    var content = File.ReadAllText(file, encoding);
+                    var newContent = content.Replace(placeHolder, name);
+                    if (newContent != content)
+                    {
+                        var trycount = 0;
+                        while (true)
+                        {
+                            try
+                            {
+                                File.WriteAllText(file, newContent, encoding);
+                                break;
+                            }
+                            catch (Exception e)
+                            {
+                                trycount++;
+                                Console.WriteLine("Write Error in " + file.Replace(rootPath, "") + "\r\n" + e.Message);
 
-                Console.WriteLine("Replace Content:" + file);
-            }
+                                Thread.Sleep(5000* trycount);
+                                 if (trycount>3)
+                                {
+                                    throw;
+                                }
+                            }
+                        }
+                       
+                    }
+
+                    Console.WriteLine("Replace Content:" + file.Replace(rootPath,""));
+                });
+
+            });
+
+            Task.WhenAll(tasks).Wait();
         }
 
         private static long GetFileSize(string file)
         {
             return new FileInfo(file).Length;
         }
-
+        /// <summary>
+        /// 获取编码
+        /// </summary>
         private static Encoding GetEncoding(string filename)
         {
-            // Read the BOM
-            var bom = new byte[4];
-            using (var file = new FileStream(filename, FileMode.Open)) file.Read(bom, 0, 4);
-
-            // Analyze the BOM
-            if (bom[0] == 0x2b && bom[1] == 0x2f && bom[2] == 0x76) return Encoding.UTF7;
-            if (bom[0] == 0xef && bom[1] == 0xbb && bom[2] == 0xbf) return Encoding.UTF8;
-            if (bom[0] == 0xff && bom[1] == 0xfe) return Encoding.Unicode; //UTF-16LE
-            if (bom[0] == 0xfe && bom[1] == 0xff) return Encoding.BigEndianUnicode; //UTF-16BE
-            if (bom[0] == 0 && bom[1] == 0 && bom[2] == 0xfe && bom[3] == 0xff) return Encoding.UTF32;
-            return Encoding.ASCII;
+            //原方法并不能正确识别Utf-8 常常被识别出来是 ASCII;
+            return EncodingType.GetType(filename);
         }
 
         private static void DirectoryCopy(string sourceDirName, string destDirName, bool copySubDirs)

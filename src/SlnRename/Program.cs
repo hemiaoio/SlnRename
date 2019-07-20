@@ -9,7 +9,11 @@ namespace SlnRename {
         }
 
         private static void RepeatRun() {
-            try {
+
+
+
+            try
+            {
                 Console.WriteLine("请输入解决方案文件夹目录:(" + Directory.GetCurrentDirectory() + ")");
                 string currentDirPath = Console.ReadLine();
                 if(string.IsNullOrWhiteSpace(currentDirPath)) {
@@ -46,8 +50,7 @@ namespace SlnRename {
                 string targetProjectName = ReadLineTargetProjectName();
 
                 SolutionRenamer solutionRenamer = new SolutionRenamer(currentDirPath, companyName, projectName,
-                    targetCompanyName, targetProjectName);
-                solutionRenamer.CreateBackup = false;
+                    targetCompanyName, targetProjectName) {CreateBackup = false};
                 solutionRenamer.Run();
             } catch(Exception e) {
                 Console.WriteLine(e);
